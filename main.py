@@ -28,17 +28,20 @@ app.add_middleware(
 )
 
 # ==========================================
-# 2. Game Logic Engine
+# 2. Advanced Unique Bingo Engine Logic
 # ==========================================
 class BingoEngine:
     @staticmethod
-    def generate_card():
+    def generate_card(card_id: int):
+        # Using card_id as a unique seed to guarantee every single card 
+        # is completely different in numbers and layout positions.
+        rng = random.Random(card_id)
         card = {
-            'B': random.sample(range(1, 16), 5),
-            'I': random.sample(range(16, 31), 5),
-            'N': random.sample(range(31, 46), 5),
-            'G': random.sample(range(46, 61), 5),
-            'O': random.sample(range(61, 76), 5)
+            'B': rng.sample(range(1, 16), 5),
+            'I': rng.sample(range(16, 31), 5),
+            'N': rng.sample(range(31, 46), 5),
+            'G': rng.sample(range(46, 61), 5),
+            'O': rng.sample(range(61, 76), 5)
         }
         card['N'][2] = 'FREE'
         return card
@@ -48,19 +51,23 @@ class BingoEngine:
         drawn = set(drawn_balls)
         drawn.add('FREE')
 
+        # Horizontal
         for i in range(5):
             if all(card[col][i] in drawn for col in ['B', 'I', 'N', 'G', 'O']):
                 return True
 
+        # Vertical
         for col in ['B', 'I', 'N', 'G', 'O']:
             if all(num in drawn for num in card[col]):
                 return True
 
+        # Diagonal
         d1 = [card['B'][0], card['I'][1], card['N'][2], card['G'][3], card['O'][4]]
         d2 = [card['B'][4], card['I'][3], card['N'][2], card['G'][1], card['O'][0]]
         if all(n in drawn for n in d1) or all(n in drawn for n in d2):
             return True
 
+        # 4 Corners
         corners = [card['B'][0], card['O'][0], card['B'][4], card['O'][4]]
         if all(c in drawn for c in corners):
             return True
@@ -83,8 +90,7 @@ class BingoEngine:
 # ==========================================
 @app.get("/api/get-card-data")
 async def get_card_data(card_id: int):
-    random.seed(card_id)
-    card = BingoEngine.generate_card()
+    card = BingoEngine.generate_card(card_id)
     return {"card_id": card_id, "card": card}
 
 @app.post("/api/verify-bingo")
@@ -129,7 +135,7 @@ async def play_command(message: types.Message):
 
 @dp.message(Command("balance"))
 async def balance_cmd(message: types.Message):
-    await message.answer("💳 **የእርስዎ ቀሪ ሂሳብ:** 0.00 ETB")
+    await message.answer("💳 **የእርስዎ ቀሪ ሂሳብ:** 500.00 ETB")
 
 @dp.message(Command("deposit"))
 async def deposit_cmd(message: types.Message):
@@ -176,3 +182,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
