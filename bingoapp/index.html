@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="am">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>EdilBingo Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: #0d1117; color: #ffffff; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+
+        /* Header Bar */
+        .header-bar { display: flex; justify-content: space-between; align-items: center; background: #161b22; padding: 10px 14px; border-radius: 10px; font-weight: bold; border: 1px solid #30363d; }
+        .derash-val { color: #2ea043; }
+        .balls-val { color: #e3b341; }
+        .players-val { color: #f85149; }
+
+        /* Main Game Layout */
+        .game-container { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+        /* Left Side: 1-75 Grid */
+        .board-75 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; background: #161b22; padding: 8px; border-radius: 10px; border: 1px solid #30363d; }
+        .num-cell { background: #21262d; text-align: center; padding: 6px 0; font-size: 11px; font-weight: bold; border-radius: 4px; color: #8b949e; }
+        .num-cell.drawn { background: #238636; color: #ffffff; }
+
+        /* Right Side: Active Ball & Cards */
+        .right-panel { display: flex; flex-direction: column; gap: 10px; }
+        
+        /* Ball Display Circle */
+        .active-ball-box { background: #161b22; border-radius: 10px; padding: 15px; text-align: center; border: 1px solid #30363d; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .ball-circle { width: 70px; height: 70px; border-radius: 50%; background: #238636; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: bold; color: #fff; box-shadow: 0 0 15px rgba(35, 134, 54, 0.5); }
+
+        /* Selected Player Cards */
+        .cards-container { display: flex; flex-direction: column; gap: 8px; }
+        .bingo-card { background: #161b22; border-radius: 8px; padding: 6px; border: 1px solid #30363d; }
+        .card-header { font-size: 12px; font-weight: bold; margin-bottom: 4px; color: #58a6ff; display: flex; justify-content: space-between; }
+        .card-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; text-align: center; font-size: 10px; }
+        .card-cell { background: #21262d; padding: 4px 0; border-radius: 3px; }
+        .card-cell.free { background: #d29922; color: #000; font-weight: bold; }
+        .card-cell.matched { background: #238636; color: #fff; }
+
+        /* Bingo Button */
+        .bingo-btn { background: #f0883e; color: #fff; font-size: 22px; font-weight: bold; text-align: center; padding: 14px; border-radius: 12px; cursor: pointer; border: none; box-shadow: 0 4px 12px rgba(240, 136, 62, 0.4); text-transform: uppercase; width: 100%; }
+        .bingo-btn:active { transform: scale(0.98); }
+
+        /* Card Selector Grid (Initial Screen) */
+        .selector-screen { background: #161b22; padding: 12px; border-radius: 10px; border: 1px solid #30363d; }
+        .card-picker-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; max-height: 250px; overflow-y: auto; margin-top: 10px; }
+        .pick-cell { background: #21262d; padding: 8px 0; text-align: center; font-size: 12px; font-weight: bold; border-radius: 4px; cursor: pointer; }
+        .pick-cell.selected { background: #1f6beb; color: #fff; border: 1px solid #58a6ff; }
+        .confirm-btn { background: #238636; color: #fff; width: 100%; padding: 10px; border-radius: 8px; border: none; font-weight: bold; margin-top: 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <!-- Top Header -->
+    <div class="header-bar">
+        <div>DERASH: <span class="derash-val" id="derash-display">0 ETB</span></div>
+        <div>BALLS: <span class="balls-val" id="balls-display">0/75</span></div>
+        <div>PLAYERS: <span class="players-val" id="players-display">0</span></div>
+    </div>
+
+    <!-- 1. Card Selection View -->
+    <div id="selection-view" class="selector-screen">
+        <h3 id="room-title">ከታች ካሉት ካርዶች ውስጥ እስከ 2 ካርዶች ይምረጡ:</h3>
+        <div class="card-picker-grid" id="picker-grid"></div>
+        <button class="confirm-btn" onclick="startGame()">ጨዋታውን ጀምር (CONFIRM)</button>
+    </div>
+
+    <!-- 2. Live Game View -->
+    <div id="game-view" class="game-container" style="display: none;">
+        <!-- Left: 1-75 Grid -->
+        <div class="board-75" id="main-board"></div>
+
+        <!-- Right: Ball & Cards -->
+        <div class="right-panel">
+            <div class="active-ball-box">
+                <div class="ball-circle" id="current-ball">-</div>
+                <div style="font-size: 11px; margin-top: 6px; color: #8b949e;">ጨዋታው በሂደት ላይ ነው...</div>
+            </div>
+
+            <div class="cards-container" id="my-cards"></div>
+        </div>
+    </div>
+
+    <button id="bingo-button" class="bingo-btn" style="display: none;" onclick="claimBingo()">BINGO!</button>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomType = urlParams.get('room') || 'regular';
+        const maxCards = roomType === 'superbingo' ? 900 : 450;
+        const ticketPrice = roomType === 'superbingo' ? 50 : 10;
+
+        let selectedCards = [];
+        let drawnBalls = [];
+        let playerCardData = [];
+
+        // Render Card Selection Grid
+        const pickerGrid = document.getElementById('picker-grid');
+        for (let i = 1; i <= maxCards; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'pick-cell';
+            cell.innerText = i;
+            cell.onclick = () => toggleSelectCard(i, cell);
+            pickerGrid.appendChild(cell);
+        }
+
+        function toggleSelectCard(id, element) {
+            if (selectedCards.includes(id)) {
+                selectedCards = selectedCards.filter(c => c !== id);
+                element.classList.remove('selected');
+            } else {
+                if (selectedCards.length >= 2) {
+                    tg.showAlert("ከ 2 ካርድ በላይ መምረጥ አይችሉም!");
+                    return;
+                }
+                selectedCards.push(id);
+                element.classList.add('selected');
+            }
+        }
+
+        // Start Game Logic
+        async function startGame() {
+            if (selectedCards.length === 0) {
+                tg.showAlert("እባክዎን ቢያንስ 1 ካርድ ይምረጡ!");
+                return;
+            }
+
+            document.getElementById('selection-view').style.display = 'none';
+            document.getElementById('game-view').style.display = 'grid';
+            document.getElementById('bingo-button').style.display = 'block';
+
+            // Calculate Pool (80/20)
+            const totalPlayers = Math.floor(Math.random() * 20) + 5;
+            const totalPool = (totalPlayers * ticketPrice);
+            const derash = totalPool * 0.8;
+
+            document.getElementById('derash-display').innerText = `${derash} ETB`;
+            document.getElementById('players-display').innerText = totalPlayers;
+
+            init75Board();
+            fetchPlayerCards();
+            startBallDrawing();
+        }
+
+        // Render 1-75 Board
+        function init75Board() {
+            const board = document.getElementById('main-board');
+            board.innerHTML = '';
+            for (let i = 1; i <= 75; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'num-cell';
+                cell.id = `ball-${i}`;
+                cell.innerText = i;
+                board.appendChild(cell);
+            }
+        }
+
+        function fetchPlayerCards() {
+            const container = document.getElementById('my-cards');
+            container.innerHTML = '';
+
+            for (let cardId of selectedCards) {
+                const card = generateMockCard(cardId);
+                playerCardData.push({ id: cardId, card: card });
+                renderCardUI(cardId, card, container);
+            }
+        }
+
+        function generateMockCard(seed) {
+            return {
+                'B': [1, 5, 8, 12, 15],
+                'I': [16, 21, 24, 28, 30],
+                'N': [31, 35, 'FREE', 42, 45],
+                'G': [46, 52, 55, 58, 60],
+                'O': [61, 65, 69, 73, 75]
+            };
+        }
+
+        function renderCardUI(cardId, card, container) {
+            const cardBox = document.createElement('div');
+            cardBox.className = 'bingo-card';
+            cardBox.innerHTML = `
+                <div class="card-header">
+                    <span>#${cardId}</span>
+                    <span>CONFIRMED 🔒</span>
+                </div>
+                <div class="card-grid" id="card-grid-${cardId}">
+                    <div>B</div><div>I</div><div>N</div><div>G</div><div>O</div>
+                    ${generateGridCells(card, cardId)}
+                </div>
+            `;
+            container.appendChild(cardBox);
+        }
+
+        function generateGridCells(card, cardId) {
+            let html = '';
+            for (let r = 0; r < 5; r++) {
+                for (let col of ['B', 'I', 'N', 'G', 'O']) {
+                    const val = card[col][r];
+                    const isFree = val === 'FREE';
+                    html += `<div class="card-cell ${isFree ? 'free' : ''}" id="cell-${cardId}-${val}">${isFree ? '★' : val}</div>`;
+                }
+            }
+            return html;
+        }
+
+        // Live Ball Drawing Loop
+        function startBallDrawing() {
+            const interval = setInterval(() => {
+                if (drawnBalls.length >= 75) {
+                    clearInterval(interval);
+                    return;
+                }
+
+                let nextBall;
+                do {
+                    nextBall = Math.floor(Math.random() * 75) + 1;
+                } while (drawnBalls.includes(nextBall));
+
+                drawnBalls.push(nextBall);
+
+                document.getElementById('current-ball').innerText = nextBall;
+                document.getElementById('balls-display').innerText = `${drawnBalls.length}/75`;
+                
+                const boardCell = document.getElementById(`ball-${nextBall}`);
+                if (boardCell) boardCell.classList.add('drawn');
+
+                selectedCards.forEach(cardId => {
+                    const cell = document.getElementById(`cell-${cardId}-${nextBall}`);
+                    if (cell) cell.classList.add('matched');
+                });
+
+            }, 3000);
+        }
+
+        function claimBingo() {
+            tg.showAlert("የ BINGO ጥሪዎ ወደ ሲስተሙ ተልኳል! በማረጋገጥ ላይ...");
+        }
+    </script>
+</body>
+</html>
